@@ -1,0 +1,236 @@
+1. Schema
+A restaurant has a name, an address, a phone number, a category (chinese, italian…) and many reviews
+A review has content (the text), a rating (between 0 and 5) and references a restaurant
+
+
+      rails generate model restaurant name:string address:text phone_number:string category:string
+
+      rails db:migrate
+
+      git status
+      git add .
+      git commit -m "Add restaurant model" 
+
+
+      rails generate model review content:text rating:integer restaurant:references
+
+      rails db:migrate
+
+      git status
+      git add .
+      git commit -m "Add review model"
+
+
+      class Restaurant < ApplicationRecord
+        has_many :reviews, dependent: :destroy
+      end
+
+
+      class Review < ApplicationRecord
+        belongs_to :restaurant
+      end
+
+
+2. Validation
+A restaurant must have at least a name, an address and a category.
+The restaurant category should belong to a fixed list ["chinese", "italian", "japanese", "french", "belgian"].
+A review must have a parent restaurant.
+A review must have content and a rating. The rating should be a number between 0 and 5.
+When a restaurant is destroyed, all of its reviews should be destroyed as well.
+Validate all model tests before moving to the routing layer. You can use this command:
+      
+
+      class Restaurant < ApplicationRecord
+        has_many :reviews, dependent: :destroy
+        
+        validates :name, :address, :category, presence: true,
+                  
+
+        validates :category, inclusion: { in: %w(chinese italian japanese french belgian) }
+      end
+
+
+      class Review < ApplicationRecord    
+      belongs_to :restaurant
+
+      validates :content, :rating, presence: true
+
+      validates :rating, inclusion: { in: (0..5) }, numericality: { only_integer: true }
+      end
+
+
+3. Testing your code
+Whenever you add migrations to your app (e.g. after a rails g model ...), don’t forget to also run the migrations on the test database we use in our specs:
+
+
+      rails db:migrate RAILS_ENV=test
+
+      rake
+
+
+OR
+
+
+      rspec spec/models
+
+
+OR You can also manually test your code with the rails console. Do not forget to reload! between each code change!
+
+
+      rails c
+      > bristol = Restaurant.new(name: "Epicure", category: "french")
+      > bristol.valid?              # Should return false
+      > bristol.address = "75008 Paris"
+      > bristol.valid?              # Should return true
+      > bristol.save                # Insert into DB and set id
+      > yummy = Review.new(content: "yummy yummy", rating: 4)
+      > yummy.restaurant = bristol  # Set foreign key restaurant_id
+      > yummy.save
+      > bristol.reviews             # Should contain the yummy review
+      > yummy.restaurant            # Should return the bristol restaurant
+
+
+4. Seed
+Seed your restaurant database in db/seeds.rb with at least 5 valid restaurant records.
+
+
+     rails db:seeds
+
+
+5:Routing / Controllers
+Asking yourself what routes you need is a very important step in your web-app building process. Routes should exactly mirror your product’s user stories. So let’s define our minimal product here:
+
+
+      rails g controller restaurants
+
+      rails g controller reviews
+
+
+      resources :restaurants do
+        resources :reviews, only: [ :new, :create ]
+      end
+
+
+It is recommended to create one feature at a time. And test.
+
+
+      rails s
+
+
+Use raise to test on an specific point in the code.
+
+This is RestaurantsController but remember to do one method at a time and test it on the server.
+
+
+      class RestaurantsController < ApplicationController
+        def index
+            @restaurants = Restaurant.all
+          end
+          
+          def show
+            @restaurant = Restaurant.find(params[:id])
+          end
+          
+          def new
+            @restaurant = Restaurant.new # needed to instantiate the form_for
+          end
+
+
+          def create
+            @restaurant = Restaurant.new(restaurant_params)
+            if @restaurant.save
+              redirect_to restaurant_path(@restaurant)
+            else
+              render :new
+            end
+          end
+
+          private
+          
+          def restaurant_params
+            params.require(:restaurant).permit(:name, :address, :category, :phone_number)
+          end
+        end
+
+
+restaurants/index.html.erb
+
+
+      <h1>Restaurants:</h1>
+      <ul>
+        <% @restaurants.each do |restaurant| %>
+          <li><%= link_to restaurant.name, restaurant_path(restaurant) %></li>
+        <% end %>
+      </ul>
+
+      <%= link_to "Create new restaurant", new_restaurant_path() %>
+
+
+restaurants/new.html.erb
+
+
+      <%= form_for(@restaurant) do |f| %>
+        <%= f.label :name %>
+        <%= f.text_field :name %>
+        <%= f.label :address %>
+        <%= f.text_field :address %>
+        <%= f.label :phone_number %>
+        <%= f.text_field :phone_number %>
+        <%= f.label :category %>
+        <%= f.text_field :category %>
+        <%= f.submit %>
+      <% end %>
+
+      <%= link_to "Go back to restaurants", restaurants_path %>
+
+
+restaurants/show.html.erb
+
+
+      <h2><%= @restaurant.name %></h2>
+      <p><%= @restaurant.address %></p>
+      <p><%= @restaurant.phone_number %></p>
+      <p><%= @restaurant.category %></p>
+
+      <%= link_to 'Back', restaurants_path %> |
+      <%= link_to 'Leave a review', new_restaurant_review_path(@restaurant) %>
+
+
+This is ReviewsController but remember to do one method at a time and test it on the server.
+
+
+      class ReviewsController < ApplicationController
+        def new
+          # we need @restaurant in our `simple_form_for`
+          @restaurant = Restaurant.find(params[:restaurant_id])
+          @review = Review.new
+
+        end
+
+        def create
+          @review = Review.new(review_params)
+          # we need `restaurant_id` to associate review with corresponding restaurant
+          @restaurant = Restaurant.find(params[:restaurant_id])
+          @review.restaurant = @restaurant
+          if @review.save
+            redirect_to restaurant_path(@restaurant)
+          else    
+            render :new
+          end
+        end
+
+        private
+
+        def review_params
+          params.require(:review).permit(:content, :rating)
+        end
+      end
+
+
+reviews/new.html.erb
+
+
+      <%= simple_form_for [ @restaurant, @review ] do |f| %>
+        <%= f.input :content %>
+        <%= f.submit "Submit review", class: "btn btn-primary" %>
+      <% end %>
